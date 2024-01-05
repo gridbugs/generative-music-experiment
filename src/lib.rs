@@ -1,5 +1,7 @@
 use currawong::prelude::*;
 use rand::{rngs::StdRng, Rng, SeedableRng};
+use std::{cell::RefCell, rc::Rc};
+use wasm_bindgen::prelude::*;
 
 const C_MAJOR_SCALE: &[NoteName] = &[
     NoteName::A,
@@ -116,6 +118,7 @@ fn synth_signal(trigger: Trigger) -> Sf64 {
                 .resonance(1.0)
                 .build(),
         )
+        .filter(echo().scale(0.5).time_s(0.2).build())
 }
 
 fn kick(trigger: Trigger) -> Sf64 {
@@ -208,14 +211,125 @@ fn drum_signal(trigger: Trigger) -> Sf64 {
         }
         _ => panic!(),
     }
+    .filter(echo().scale(0.5).time_s(0.1).build())
 }
 
-fn signal(trigger: Trigger) -> Sf64 {
+fn signal() -> Sf64 {
+    let trigger = periodic_trigger_hz(10.0).build();
     (synth_signal(trigger.divide(2)) / 2.0 + drum_signal(trigger.divide(3))) * 0.2
 }
 
-fn main() -> anyhow::Result<()> {
-    let signal = signal(periodic_trigger_hz(10.0).build());
-    let mut signal_player = SignalPlayer::new()?;
-    signal_player.play_sample_forever(signal)
+fn window() -> web_sys::Window {
+    web_sys::window().expect("no global `window` exists")
+}
+
+fn document() -> web_sys::Document {
+    window()
+        .document()
+        .expect("should have a document on window")
+}
+
+fn request_animation_frame(f: &Closure<dyn FnMut()>) {
+    window()
+        .request_animation_frame(f.as_ref().unchecked_ref())
+        .expect("should register `requestAnimationFrame` OK");
+}
+
+struct Synth {
+    signal: Sf64,
+    player: SignalPlayer,
+    playing: bool,
+}
+
+impl Synth {
+    fn new() -> Self {
+        Self {
+            signal: signal(),
+            player: SignalPlayer::new().unwrap(),
+            playing: true,
+        }
+    }
+    fn send_signal(&mut self) {
+        if self.playing {
+            self.player.send_signal(&mut self.signal);
+        } else {
+            self.player.send_signal(&mut const_(0.0));
+        }
+    }
+}
+
+fn start_synth(synth: Rc<RefCell<Option<Synth>>>) {
+    {
+        let mut synth_opt = synth.borrow_mut();
+        if let Some(synth) = synth_opt.as_mut() {
+            synth.playing = true;
+            return;
+        } else {
+            *synth_opt = Some(Synth::new());
+        }
+    }
+    let loop_callback = Rc::new(RefCell::new(None));
+    let loop_callback_ = Rc::clone(&loop_callback);
+    *loop_callback_.borrow_mut() = Some(Closure::wrap(Box::new(move || {
+        let mut synth_opt = synth.borrow_mut();
+        let synth = synth_opt.as_mut().unwrap();
+        synth.send_signal();
+        request_animation_frame(loop_callback.borrow().as_ref().unwrap())
+    }) as Box<dyn FnMut()>));
+    loop_callback_
+        .borrow()
+        .as_ref()
+        .unwrap()
+        .as_ref()
+        .unchecked_ref::<js_sys::Function>()
+        .call0(&JsValue::NULL)
+        .unwrap();
+}
+
+fn stop_synth(synth: Rc<RefCell<Option<Synth>>>) {
+    let mut synth_opt = synth.borrow_mut();
+    if let Some(synth) = synth_opt.as_mut() {
+        synth.playing = false;
+    }
+}
+
+fn mk_button(text: &str) -> Result<web_sys::HtmlElement, JsValue> {
+    let button = document().create_element("button")?;
+    button.set_inner_html(text);
+    let button = button.unchecked_into::<web_sys::HtmlElement>();
+    let style = button.style();
+    style.set_property("font-size", "24pt")?;
+    Ok(button)
+}
+
+fn on_click<F: FnMut() + 'static>(element: &web_sys::HtmlElement, mut f: F) -> Result<(), JsValue> {
+    let closure = Closure::wrap(Box::new(move |_event: JsValue| f()) as Box<dyn FnMut(JsValue)>);
+    element.add_event_listener_with_callback("click", closure.as_ref().unchecked_ref())?;
+    closure.forget();
+    Ok(())
+}
+
+#[wasm_bindgen(start)]
+pub fn run() -> Result<(), JsValue> {
+    wasm_logger::init(wasm_logger::Config::new(log::Level::Info));
+    console_error_panic_hook::set_once();
+    let synth = Rc::new(RefCell::new(None));
+    let body = document().body().unwrap();
+    let button_start = mk_button("Start")?;
+    body.append_child(&button_start)?;
+    on_click(&button_start, {
+        let synth = Rc::clone(&synth);
+        move || {
+            start_synth(Rc::clone(&synth));
+        }
+    })?;
+    let button_stop = mk_button("Stop")?;
+    body.append_child(&button_stop)?;
+    on_click(&button_stop, {
+        let synth = Rc::clone(&synth);
+        move || {
+            stop_synth(Rc::clone(&synth));
+        }
+    })?;
+    Ok(())
 }
