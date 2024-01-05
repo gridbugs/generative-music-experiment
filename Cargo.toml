@@ -7,7 +7,7 @@ edition = "2021"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-currawong = { version = "0.2", features = ["web"], default-features = false }
+currawong = { version = "0.3", features = ["web"], default-features = false }
 rand = "0.8"
 anyhow = "1.0"
 console_error_panic_hook = "0.1"
@@ -24,7 +24,3 @@ features = [
     "HtmlElement",
     "CssStyleDeclaration",
 ]
-
-[patch.crates-io]
-currawong = { path = "/Users/s/src/currawong/currawong" }
-currawong_core = { path = "/Users/s/src/currawong/core" }
