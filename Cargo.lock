@@ -248,9 +248,9 @@ dependencies = [
 
 [[package]]
 name = "currawong_core"
-version = "0.4.1"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bfe3c87c8d5b5e539e0d743fba3206ff7efb0ad04a9f3724f1acdbfac03f60aa"
+checksum = "83778e6e5c042791b1d203b032b053d8906d30bc7207a250a94d181cb358531b"
 dependencies = [
  "getrandom",
  "midly",

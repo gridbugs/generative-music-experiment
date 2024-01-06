@@ -233,7 +233,8 @@ fn drum_signal(trigger: Trigger) -> Sf64 {
 
 fn signal() -> Sf64 {
     let trigger = periodic_trigger_hz(10.0).build();
-    (synth_signal(trigger.divide(2)) / 4.0 + drum_signal(trigger.divide(3))) * 0.2
+    let dry = (synth_signal(trigger.divide(2)) / 4.0 + drum_signal(trigger.divide(3))) * 0.2;
+    dry.filter(reverb().room_size(0.8).build()) + dry
 }
 
 fn window() -> web_sys::Window {
