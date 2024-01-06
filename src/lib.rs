@@ -36,11 +36,10 @@ fn voice(freq: Sfreq, gate: Gate, effect1: Sf64, effect2: Sf64) -> Sf64 {
         .build()
         .exp_01(1.0);
     osc.filter(
-        low_pass_chebyshev((8000.0 * env_lpf) + (4000.0 * effect1))
-            .resonance(4.0)
+        low_pass_moog_ladder(8000.0 * env_lpf)
+            .resonance(effect1 * 2.0)
             .build(),
     )
-    .filter(saturate().scale(2.0).min(-1.0).max(1.0).build())
     .mul_lazy(&env_amp)
 }
 
@@ -103,29 +102,35 @@ fn synth_signal(trigger: Trigger) -> Sf64 {
         const_(0.1),
         const_(0.5),
     );
-    let gate = trigger.to_gate_with_duration_s(0.02);
     let modulate = 1.0
         - oscillator_s(Waveform::Triangle, 60.0)
             .build()
             .signed_to_01();
-    let lfo = oscillator_hz(Waveform::Sine, &modulate * 2.0).build();
     let effect1 = oscillator_s(Waveform::Sine, 47.0).build().signed_to_01();
     let effect2 = oscillator_s(Waveform::Sine, 23.0).build().signed_to_01();
-    let effect3 = oscillator_s(Waveform::Sine, 31.0).build().signed_to_01();
-    voice(freq, gate, effect1, effect2)
-        .filter(
-            compress()
-                .threshold(2.0)
-                .scale(1.0 + &modulate * 8.0)
-                .ratio(0.1)
-                .build(),
-        )
-        .filter(
-            low_pass_moog_ladder(6000.0 + &lfo * 2000.0)
-                .resonance(1.0)
-                .build(),
-        )
-        .filter(echo().scale(0.5 * effect3).time_s(0.2).build())
+    let mk_voice = {
+        |freq, trigger: Trigger| {
+            let trigger = trigger.clone();
+            let effect1 = effect1.clone();
+            let effect2 = effect2.clone();
+            let gate = trigger.to_gate_with_duration_s(0.02);
+            voice(freq, gate, effect1.clone(), effect2.clone()).filter(
+                compress()
+                    .threshold(2.0)
+                    .scale(1.0 + &modulate * 8.0)
+                    .ratio(0.1)
+                    .build(),
+            )
+        }
+    };
+    let poly_triggers = trigger_split_cycle(trigger, 2);
+    poly_triggers
+        .into_iter()
+        .map(move |trigger| {
+            let freq = freq.hz().filter(sample_and_hold(trigger.clone()).build());
+            mk_voice(sfreq_hz(freq), trigger)
+        })
+        .sum()
 }
 
 fn kick(trigger: Trigger) -> Sf64 {
@@ -228,7 +233,7 @@ fn drum_signal(trigger: Trigger) -> Sf64 {
 
 fn signal() -> Sf64 {
     let trigger = periodic_trigger_hz(10.0).build();
-    (synth_signal(trigger.divide(2)) / 2.0 + drum_signal(trigger.divide(3))) * 0.2
+    (synth_signal(trigger.divide(2)) / 4.0 + drum_signal(trigger.divide(3))) * 0.2
 }
 
 fn window() -> web_sys::Window {
@@ -262,7 +267,7 @@ impl Synth {
     fn new() -> Self {
         Self {
             signal: signal(),
-            player: SignalPlayer::new().unwrap(),
+            player: SignalPlayer::new_with_downsample(1).unwrap(),
             playing: true,
         }
     }
