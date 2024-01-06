@@ -241,10 +241,15 @@ fn document() -> web_sys::Document {
         .expect("should have a document on window")
 }
 
-fn request_animation_frame(f: &Closure<dyn FnMut()>) {
+fn set_timeout(f: &Closure<dyn FnMut()>, period_ms: i32) {
+    let array = js_sys::Array::new();
     window()
-        .request_animation_frame(f.as_ref().unchecked_ref())
-        .expect("should register `requestAnimationFrame` OK");
+        .set_timeout_with_callback_and_timeout_and_arguments(
+            f.as_ref().unchecked_ref(),
+            period_ms,
+            &array,
+        )
+        .expect("failed to set timeout");
 }
 
 struct Synth {
@@ -286,7 +291,7 @@ fn start_synth(synth: Rc<RefCell<Option<Synth>>>) {
         let mut synth_opt = synth.borrow_mut();
         let synth = synth_opt.as_mut().unwrap();
         synth.send_signal();
-        request_animation_frame(loop_callback.borrow().as_ref().unwrap())
+        set_timeout(loop_callback.borrow().as_ref().unwrap(), 16);
     }) as Box<dyn FnMut()>));
     loop_callback_
         .borrow()
