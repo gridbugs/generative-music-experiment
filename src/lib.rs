@@ -27,19 +27,19 @@ fn random_note_c_major(base_hz: Sf64, range_hz: Sf64) -> Sfreq {
 
 fn voice(freq: Sfreq, gate: Gate, effect1: Sf64, effect2: Sf64) -> Sf64 {
     let freq_hz = freq.hz();
-    let osc = oscillator_hz(Waveform::Saw, freq_hz.clone()).build()
-        + oscillator_hz(Waveform::Saw, freq_hz.clone() * 2.0).build();
-    let env_amp = adsr_linear_01(&gate).attack_s(0.01).release_s(2.0).build();
+    let osc = oscillator_hz(Waveform::Saw, freq_hz.clone()).build();
+    let env_amp = adsr_linear_01(&gate).attack_s(0.01).release_s(0.5).build();
     let env_lpf = adsr_linear_01(&gate)
         .attack_s(0.01)
-        .release_s(0.1 + (effect2 * 0.5))
+        .release_s(0.5)
         .build()
         .exp_01(1.0);
     osc.filter(
-        low_pass_moog_ladder(8000.0 * env_lpf)
-            .resonance(effect1 * 2.0)
+        low_pass_moog_ladder(1000.0 + 2000.0 * env_lpf * effect1)
+            .resonance(1.0 * &effect2)
             .build(),
     )
+    .filter(compress().scale(effect2 * 4.0).build())
     .mul_lazy(&env_amp)
 }
 
@@ -87,14 +87,16 @@ fn random_replace_loop(
 }
 
 fn synth_signal(trigger: Trigger) -> Sf64 {
-    let trigger = trigger.random_skip(0.1);
-
     let modulate = 1.0
         - oscillator_s(Waveform::Triangle, 60.0)
             .build()
             .signed_to_01();
-    let effect1 = oscillator_s(Waveform::Sine, 47.0).build().signed_to_01();
-    let effect2 = oscillator_s(Waveform::Sine, 23.0).build().signed_to_01();
+    let effect1 = (1.0 - oscillator_s(Waveform::Sine, 47.0).build()).signed_to_01();
+    let effect2 = oscillator_s(Waveform::Sine, 67.0)
+        .reset_offset_01(-0.25)
+        .build()
+        .signed_to_01();
+    let effect3 = oscillator_s(Waveform::Sine, 51.0).build().signed_to_01();
     let mk_voice = {
         |freq, trigger: Trigger| {
             let trigger = trigger.clone();
@@ -111,130 +113,32 @@ fn synth_signal(trigger: Trigger) -> Sf64 {
         }
     };
     let poly_triggers = trigger_split_cycle(trigger, 2);
-    poly_triggers
+    let dry: Sf64 = poly_triggers
         .into_iter()
         .map(move |trigger| {
             let freq = random_replace_loop(
                 trigger.clone(),
                 const_(
                     Note {
-                        name: NoteName::A,
+                        name: NoteName::C,
                         octave: 1,
                     }
                     .freq(),
                 ),
-                random_note_c_major(const_(50.0), const_(200.0)),
-                8,
+                random_note_c_major(const_(100.0), const_(300.0)),
+                32,
                 const_(0.1),
                 const_(0.5),
             );
-            mk_voice(freq, trigger)
+            mk_voice(freq, trigger.random_skip(0.5))
         })
-        .sum()
-}
-
-fn kick(trigger: Trigger) -> Sf64 {
-    let clock = trigger.to_gate();
-    let duration_s = 0.1;
-    let freq_hz = adsr_linear_01(&clock)
-        .release_s(duration_s)
-        .build()
-        .exp_01(1.0)
-        * 120;
-    let osc = oscillator_hz(Waveform::Triangle, freq_hz).build();
-    let env_amp = adsr_linear_01(&clock)
-        .release_s(duration_s)
-        .build()
-        .exp_01(1.0)
-        .filter(low_pass_moog_ladder(1000.0).build());
-    osc.mul_lazy(&env_amp)
-        .filter(compress().ratio(0.02).scale(16.0).build())
-}
-
-fn snare(trigger: Trigger) -> Sf64 {
-    let clock = trigger.to_gate();
-    let duration_s = 0.1;
-    let noise = noise().filter(compress().ratio(0.1).scale(100.0).build());
-    let env = adsr_linear_01(&clock)
-        .release_s(duration_s * 1.0)
-        .build()
-        .exp_01(1.0)
-        .filter(low_pass_moog_ladder(1000.0).build());
-    let noise = noise
-        .filter(low_pass_moog_ladder(10000.0).resonance(2.0).build())
-        .filter(down_sample(10.0).build());
-    let freq_hz = adsr_linear_01(&clock)
-        .release_s(duration_s)
-        .build()
-        .exp_01(1.0)
-        * 240;
-    let osc = oscillator_hz(Waveform::Pulse, freq_hz)
-        .reset_trigger(trigger)
-        .build();
-    (noise + osc)
-        .filter(down_sample(10.0).build())
-        .mul_lazy(&env)
-}
-
-fn cymbal(trigger: Trigger) -> Sf64 {
-    let gate = trigger.to_gate();
-    let osc = noise();
-    let env = adsr_linear_01(gate)
-        .release_s(0.1)
-        .build()
-        .filter(low_pass_butterworth(100.0).build());
-    osc.filter(low_pass_moog_ladder(10000 * &env).build())
-        .filter(high_pass_butterworth(6000.0).build())
-}
-
-fn drum_signal(trigger: Trigger) -> Sf64 {
-    let effect1 = oscillator_s(Waveform::Sine, 31.0).build().signed_to_01();
-    let effect2 = oscillator_s(Waveform::Sine, 41.0).build().signed_to_01();
-    const CYMBAL: usize = 0;
-    const SNARE: usize = 1;
-    const KICK: usize = 2;
-    let drum_pattern = {
-        let cymbal = 1 << CYMBAL;
-        let snare = 1 << SNARE;
-        let kick = 1 << KICK;
-        vec![
-            cymbal | kick,
-            cymbal,
-            cymbal | snare,
-            cymbal,
-            cymbal | kick,
-            cymbal,
-            cymbal | snare,
-            cymbal | snare,
-            cymbal | kick,
-            cymbal,
-            cymbal | snare,
-            cymbal,
-            cymbal | kick,
-            cymbal | kick,
-            cymbal | snare,
-            cymbal | snare,
-        ]
-    };
-    let drum_sequence = bitwise_pattern_triggers_8(trigger, drum_pattern).triggers;
-    match &drum_sequence.as_slice() {
-        &[cymbal_trigger, snare_trigger, kick_trigger, ..] => {
-            cymbal(cymbal_trigger.clone().and_fn_ctx({
-                let effect = effect2.clone();
-                move |ctx| effect.sample(ctx) < 0.5
-            })) + snare(snare_trigger.and_fn_ctx({
-                let effect = effect1.clone();
-                move |ctx| effect.sample(ctx) < 0.5
-            })) + kick(kick_trigger.clone())
-        }
-        _ => panic!(),
-    }
+        .sum();
+    (dry.filter(reverb().room_size(1.0).build()) * 1.0 + (3.0 * effect3)) + dry
 }
 
 fn signal() -> Sf64 {
-    let trigger = periodic_trigger_hz(10.0).build();
-    let dry = (synth_signal(trigger.divide(2)) / 4.0 + drum_signal(trigger.divide(3))) * 0.2;
-    dry.filter(reverb().room_size(0.8).build()) + dry
+    let trigger = periodic_trigger_hz(1.0).build();
+    synth_signal(trigger.divide(1)) * 0.2
 }
 
 fn window() -> web_sys::Window {
