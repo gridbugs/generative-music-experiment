@@ -235,9 +235,7 @@ dependencies = [
 
 [[package]]
 name = "currawong"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4bf51adad59119c61995fb42ec0a52d9ea9193554f521cb34678b352c941295e"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "cpal",
@@ -248,9 +246,7 @@ dependencies = [
 
 [[package]]
 name = "currawong_core"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82b53c721827399d1e33742c9bdd2051e544c429513280db35457ac1a40be22d"
+version = "0.4.0"
 dependencies = [
  "getrandom",
  "midly",

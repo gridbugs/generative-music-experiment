@@ -25,19 +25,23 @@ fn random_note_c_major(base_hz: Sf64, range_hz: Sf64) -> Sfreq {
         .filter(quantize_to_scale(make_scale_base_freqs(C_MAJOR_SCALE)).build())
 }
 
-fn voice(freq: Sfreq, gate: Gate) -> Sf64 {
+fn voice(freq: Sfreq, gate: Gate, effect1: Sf64, effect2: Sf64) -> Sf64 {
     let freq_hz = freq.hz();
     let osc = oscillator_hz(Waveform::Saw, freq_hz.clone()).build()
         + oscillator_hz(Waveform::Saw, freq_hz.clone() * 2.0).build();
     let env_amp = adsr_linear_01(&gate).attack_s(0.01).release_s(2.0).build();
     let env_lpf = adsr_linear_01(&gate)
         .attack_s(0.01)
-        .release_s(0.3)
+        .release_s(0.1 + (effect2 * 0.2))
         .build()
         .exp_01(1.0);
-    osc.filter(low_pass_chebyshev(8000.0 * env_lpf).resonance(4.0).build())
-        .filter(saturate().scale(2.0).min(-1.0).max(1.0).build())
-        .mul_lazy(&env_amp)
+    osc.filter(
+        low_pass_chebyshev((8000.0 * env_lpf) + (4000.0 * effect1))
+            .resonance(4.0)
+            .build(),
+    )
+    .filter(saturate().scale(2.0).min(-1.0).max(1.0).build())
+    .mul_lazy(&env_amp)
 }
 
 fn random_replace_loop(
@@ -105,7 +109,10 @@ fn synth_signal(trigger: Trigger) -> Sf64 {
             .build()
             .signed_to_01();
     let lfo = oscillator_hz(Waveform::Sine, &modulate * 2.0).build();
-    voice(freq, gate)
+    let effect1 = oscillator_s(Waveform::Sine, 47.0).build().signed_to_01();
+    let effect2 = oscillator_s(Waveform::Sine, 23.0).build().signed_to_01();
+    let effect3 = oscillator_s(Waveform::Sine, 31.0).build().signed_to_01();
+    voice(freq, gate, effect1, effect2)
         .filter(
             compress()
                 .threshold(2.0)
@@ -118,7 +125,7 @@ fn synth_signal(trigger: Trigger) -> Sf64 {
                 .resonance(1.0)
                 .build(),
         )
-        .filter(echo().scale(0.5).time_s(0.2).build())
+        .filter(echo().scale(0.5 * effect3).time_s(0.2).build())
 }
 
 fn kick(trigger: Trigger) -> Sf64 {
@@ -176,6 +183,8 @@ fn cymbal(trigger: Trigger) -> Sf64 {
 }
 
 fn drum_signal(trigger: Trigger) -> Sf64 {
+    let effect1 = oscillator_s(Waveform::Sine, 31.0).build().signed_to_01();
+    let effect2 = oscillator_s(Waveform::Sine, 41.0).build().signed_to_01();
     const CYMBAL: usize = 0;
     const SNARE: usize = 1;
     const KICK: usize = 2;
@@ -205,13 +214,16 @@ fn drum_signal(trigger: Trigger) -> Sf64 {
     let drum_sequence = bitwise_pattern_triggers_8(trigger, drum_pattern).triggers;
     match &drum_sequence.as_slice() {
         &[cymbal_trigger, snare_trigger, kick_trigger, ..] => {
-            cymbal(cymbal_trigger.clone())
-                + snare(snare_trigger.clone())
-                + kick(kick_trigger.clone())
+            cymbal(cymbal_trigger.clone().and_fn_ctx({
+                let effect = effect2.clone();
+                move |ctx| effect.sample(ctx) < 0.5
+            })) + snare(snare_trigger.and_fn_ctx({
+                let effect = effect1.clone();
+                move |ctx| effect.sample(ctx) < 0.5
+            })) + kick(kick_trigger.clone())
         }
         _ => panic!(),
     }
-    .filter(echo().scale(0.5).time_s(0.1).build())
 }
 
 fn signal() -> Sf64 {

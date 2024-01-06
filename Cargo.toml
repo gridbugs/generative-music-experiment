@@ -7,7 +7,7 @@ edition = "2021"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-currawong = { version = "0.3", features = ["web"], default-features = false }
+currawong = { version = "0.4", features = ["web"], default-features = false }
 rand = "0.8"
 anyhow = "1.0"
 console_error_panic_hook = "0.1"
