@@ -32,7 +32,7 @@ fn voice(freq: Sfreq, gate: Gate, effect1: Sf64, effect2: Sf64) -> Sf64 {
     let env_amp = adsr_linear_01(&gate).attack_s(0.01).release_s(2.0).build();
     let env_lpf = adsr_linear_01(&gate)
         .attack_s(0.01)
-        .release_s(0.1 + (effect2 * 0.2))
+        .release_s(0.1 + (effect2 * 0.5))
         .build()
         .exp_01(1.0);
     osc.filter(
@@ -88,20 +88,7 @@ fn random_replace_loop(
 
 fn synth_signal(trigger: Trigger) -> Sf64 {
     let trigger = trigger.random_skip(0.1);
-    let freq = random_replace_loop(
-        trigger.clone(),
-        const_(
-            Note {
-                name: NoteName::A,
-                octave: 1,
-            }
-            .freq(),
-        ),
-        random_note_c_major(const_(50.0), const_(200.0)),
-        8,
-        const_(0.1),
-        const_(0.5),
-    );
+
     let modulate = 1.0
         - oscillator_s(Waveform::Triangle, 60.0)
             .build()
@@ -127,8 +114,21 @@ fn synth_signal(trigger: Trigger) -> Sf64 {
     poly_triggers
         .into_iter()
         .map(move |trigger| {
-            let freq = freq.hz().filter(sample_and_hold(trigger.clone()).build());
-            mk_voice(sfreq_hz(freq), trigger)
+            let freq = random_replace_loop(
+                trigger.clone(),
+                const_(
+                    Note {
+                        name: NoteName::A,
+                        octave: 1,
+                    }
+                    .freq(),
+                ),
+                random_note_c_major(const_(50.0), const_(200.0)),
+                8,
+                const_(0.1),
+                const_(0.5),
+            );
+            mk_voice(freq, trigger)
         })
         .sum()
 }
